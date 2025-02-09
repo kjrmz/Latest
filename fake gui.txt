@@ -1,0 +1,36 @@
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/jensonhirst/Orion/main/source')))()
+
+local Window = OrionLib:MakeWindow({Name = "✨Pet Simulator 99✨", HidePremium = false, SaveConfig = false, ConfigFolder = "OrionTest"})
+
+local Tab = Window:MakeTab({
+	Name = "Huge Hunter",
+	Icon = "rbxassetid://4483345998",
+	PremiumOnly = false
+})
+
+Tab:AddButton({
+	Name = "Execute",
+	Callback = function()
+      		print("button pressed")
+  	end    
+})
+
+local Tab = Window:MakeTab({
+	Name = "Dupe Pets",
+	Icon = "rbxassetid://4483345998",
+	PremiumOnly = false
+})
+
+Tab:AddButton({
+	Name = "Execute",
+	Callback = function()
+      		print("button pressed")
+  	end    
+})
+
+OrionLib:MakeNotification({
+	Name = "Script Loading!!",
+	Content = "Wait 30 - 60 seconds....",
+	Image = "rbxassetid://4483345998",
+	Time = 1000
+})
