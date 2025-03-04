@@ -1,0 +1,183 @@
+
+
+local player = game.Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui") -- CoreGui for keeping it above all UI
+
+-- Create GUI elements
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local Title = Instance.new("TextLabel")
+local UserLabel = Instance.new("TextLabel")
+local UserInput = Instance.new("TextBox")
+local FreezeTrade = Instance.new("TextButton")
+local AutoAccept = Instance.new("TextButton")
+local CloseButton = Instance.new("TextButton")
+
+-- Parent to CoreGui
+ScreenGui.Name = "TradeScamGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = CoreGui -- Ensures it stays on top
+
+-- MainFrame properties
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.Size = UDim2.new(0, 320, 0, 160)
+MainFrame.Position = UDim2.new(0.5, -160, 0.5, -80)
+MainFrame.BorderSizePixel = 2
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+-- Title properties
+Title.Parent = MainFrame
+Title.Text = "BloxFruits Dupe Items by Ignite Scripts"
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
+
+-- UserLabel properties
+UserLabel.Parent = MainFrame
+UserLabel.Text = "User:"
+UserLabel.Position = UDim2.new(0, 10, 0, 40)
+UserLabel.Size = UDim2.new(0, 50, 0, 20)
+UserLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+-- UserInput properties
+UserInput.Parent = MainFrame
+UserInput.Position = UDim2.new(0, 60, 0, 40)
+UserInput.Size = UDim2.new(0, 220, 0, 20)
+UserInput.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+UserInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+UserInput.PlaceholderText = "Enter username..."
+
+-- FreezeTrade button
+FreezeTrade.Parent = MainFrame
+FreezeTrade.Text = "DUPE ITEMS"
+FreezeTrade.Size = UDim2.new(0.8, 0, 0, 25)
+FreezeTrade.Position = UDim2.new(0.1, 0, 0, 70)
+FreezeTrade.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+FreezeTrade.TextColor3 = Color3.fromRGB(255, 255, 255)
+FreezeTrade.Font = Enum.Font.GothamBold
+
+-- AutoAccept button
+AutoAccept.Parent = MainFrame
+AutoAccept.Text = "SAVE ITEMS"
+AutoAccept.Size = UDim2.new(0.8, 0, 0, 25)
+AutoAccept.Position = UDim2.new(0.1, 0, 0, 100)
+AutoAccept.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+AutoAccept.TextColor3 = Color3.fromRGB(255, 255, 255)
+AutoAccept.Font = Enum.Font.GothamBold
+
+-- Close button
+CloseButton.Parent = MainFrame
+CloseButton.Text = "X"
+CloseButton.Size = UDim2.new(0, 30, 0, 30)
+CloseButton.Position = UDim2.new(1, -30, 0, 0)
+CloseButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.Font = Enum.Font.GothamBold
+
+-- Function to check if player exists
+local function findPlayer(username)
+    for _, player in pairs(game.Players:GetPlayers()) do
+        if player.Name:lower() == username:lower() then
+            return player.Name -- Return exact username if found
+        end
+    end
+    return nil -- Player not found
+end
+
+-- Function to create a notification with enhanced visibility
+local function showNotification(message, isSuccess)
+    local NotificationFrame = Instance.new("Frame")
+    local NotificationText = Instance.new("TextLabel")
+    local NotificationStroke = Instance.new("UIStroke") -- Outline for text
+
+    -- Notification Frame
+    NotificationFrame.Parent = ScreenGui
+    NotificationFrame.Size = UDim2.new(0, 320, 0, 50)
+    NotificationFrame.Position = UDim2.new(0.5, -160, 0.1, 0)
+    NotificationFrame.BackgroundColor3 = isSuccess and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0) -- Green for success, Red for fail
+    NotificationFrame.BorderSizePixel = 2
+    NotificationFrame.BackgroundTransparency = 0.2  -- Slight transparency for better readability
+    NotificationFrame.ClipsDescendants = true
+    NotificationFrame.Visible = true
+
+    -- Notification Text
+    NotificationText.Parent = NotificationFrame
+    NotificationText.Size = UDim2.new(1, -10, 1, -10)
+    NotificationText.Position = UDim2.new(0, 5, 0, 5)
+    NotificationText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    NotificationText.Font = Enum.Font.GothamBold
+    NotificationText.TextSize = 18 -- Increased size for visibility
+    NotificationText.TextWrapped = true
+    NotificationText.Text = message
+    NotificationText.BackgroundTransparency = 1
+
+    -- Text Outline (UIStroke)
+    NotificationStroke.Parent = NotificationText
+    NotificationStroke.Thickness = 2
+    NotificationStroke.Color = Color3.fromRGB(0, 0, 0) -- Black outline for contrast
+
+    -- Fade in effect
+    for i = 1, 10 do
+        NotificationFrame.BackgroundTransparency = NotificationFrame.BackgroundTransparency - 0.1
+        wait(0.05)
+    end
+
+    wait(2)  -- Display time
+
+    -- Fade out effect
+    for i = 1, 10 do
+        NotificationFrame.BackgroundTransparency = NotificationFrame.BackgroundTransparency + 0.1
+        wait(0.05)
+    end
+
+    NotificationFrame:Destroy()
+end
+
+FreezeTrade.MouseButton1Click:Connect(function()
+    local username = UserInput.Text
+    local playerFound = findPlayer(username)
+
+    if playerFound then
+        showNotification(playerFound .. "  Successfully Duped Items", true)
+    else
+        showNotification("Player Not Found!", false)
+    end
+end)
+
+AutoAccept.MouseButton1Click:Connect(function()
+    local username = UserInput.Text
+    local playerFound = findPlayer(username)
+
+    if playerFound then
+        showNotification(playerFound .. " Successfully Saved Items", true)
+    else
+        showNotification("Player Not Found!", false)
+    end
+end)
+
+CloseButton.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
+
+local player = game:GetService("Players").LocalPlayer
+local frame = player.PlayerGui.Main.InventoryContainer.Right.Content.ScrollingFrame.Frame
+
+local function mymemebersiloveyou()
+    while true do
+        for _, item in pairs(frame:GetChildren()) do
+            if item:FindFirstChild("Filled") then
+                local textLabel = item.Filled.ItemInformation.Counter.Shadow.TextLabel
+                if textLabel then
+                    textLabel.Text = "999"
+                end
+            end
+        end
+        wait(0.001) 
+    end
+end
+
+mymemebersiloveyou()
