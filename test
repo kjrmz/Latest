@@ -49,7 +49,7 @@ local function checkGenerationRequirement()
     end
 
     -- Check if total generation is 5M or more
-    if totalGeneration < 1000000 then
+    if totalGeneration < 100000 then
         player:Kick("You have been kicked because you need 5M/s generation brainrots to dupe with this script!")
         return false
     end
@@ -1608,5 +1608,6 @@ local spawnTween = TweenService:Create(
     {Size = UDim2.new(0, 420, 0, 220)}
 )
 spawnTween:Play()
+
 
 
